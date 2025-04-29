@@ -1,0 +1,650 @@
+--- 
+title: "Week 3 Visualizations"
+author: "Amanda Gahlot"
+date: "10.23.24"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+Today, we're going to go through some examples and code for visualizations, including more interactive charts. A lot of this came from the websites: 
+
+https://r-graph-gallery.com/interactive-charts.html
+
+https://www.data-to-viz.com
+
+# Set up
+```{r prelims, echo=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+#now no error or warning messages will show when I knit this document. Note that I did not need to enter echo=TRUE or results=TRUE because those are already default settings. 
+```
+
+```{r chunk code, echo=FALSE}
+#you can load all of your libraries with one click. 
+
+#libraries
+library(tidyverse)
+library(psych)
+library(data.table)
+library(sjPlot) 
+library(sjmisc) 
+library(sjlabelled) 
+library(gtsummary)
+library(readxl)
+```
+
+```{r set wd, echo=FALSE}
+setwd("/Users/amandagahlot/test")
+```
+
+```{r import data, results='hide'}
+
+df <- read_excel('cleaned_data_Final.xlsx')
+
+print(head(df))
+```
+
+## Renaming 
+When creating tables and visualizations, recommend changing your variable labels and numeric values to give them meaning. So instead of my table saying TBI severity "1,2,3" it would read "mild, moderate, and severe" - this makes it more meaningful and easier for outside audiences to understanding
+
+So, I create a new data frame called df_demo and change it there, keeping my original data frame intact.
+
+```{r rename}
+df_demo <- df
+# level naming for categorical variables
+df_demo$gender <- factor(df_demo$gender,
+                   levels = c(1,2,3),
+                   labels = c("Male", "Female", "Nonbinary"))
+
+df_demo$work_current <- factor(df_demo$work_current,
+                   levels = c(1,0),
+                   labels = c("Yes", "No"))
+
+df_demo$severity <- factor(df_demo$severity,
+                   levels = c(2,3),
+                   labels = c("Moderate", "Severe"))
+
+df_demo$mech_injury <- factor(df_demo$mech_injury,
+                   levels = c(1,2,3,4,5),
+                   labels = c("Fall", "MVC", "Sports", "Violence", "Pedestrian struck"))
+
+df_demo$income <- factor(df_demo$income,
+                   levels = c(1,2,3),
+                   labels = c("<52K", "52K-156K", ">156K"))
+
+df_demo$marital_status <- factor(df_demo$marital_status,
+                                 levels = c(1, 2, 3, 4),
+                                 labels = c("Single", "Married", "Divorced", "Widowed"))
+```
+
+Now I have two data frames, the original "df" which is still numeric and df_demo which is character
+
+# Tables
+
+```{r included variables compare, results='asis'}
+PPF_table <- df_demo %>%
+  subset(., select = c(phys_health_index, emo_health_index, tbiqol_genconcern_tscore, bfi_extraversion, bfi_agreeable, bfi_consciousness, bfi_neuroticism, bfi_openness, income, marital_status, spstotal, frsbe_exec, frsbe_disinhib, frsbe_apathy, frsbe_total, severity)) %>%
+  tbl_summary(
+    missing = "no",
+    by = severity,
+    type = list(
+      c(phys_health_index, emo_health_index, tbiqol_genconcern_tscore, bfi_extraversion, bfi_agreeable, bfi_consciousness, bfi_neuroticism, bfi_openness) ~ "continuous",
+      c(severity, income) ~ "categorical"
+    ),
+    statistic = list(all_continuous() ~ "{mean} ({sd})", all_categorical() ~ "{n} ({p}%)"),
+    label = list(
+      phys_health_index ~ "Physical Health Index",
+      emo_health_index ~ "Emotional Health Index",
+      tbiqol_genconcern_tscore ~ "General Cognition",
+      bfi_extraversion ~ "Extraversion", 
+      bfi_agreeable ~ "Agreeable", 
+      bfi_consciousness ~ "Consciousness", 
+      bfi_neuroticism ~ "Neuroticism", 
+      bfi_openness ~ "Openness",
+      income ~ "Annual household income",
+      marital_status ~ "Marital status",
+      spstotal ~ "Social Support",
+      frsbe_exec ~ "Executive function",
+      frsbe_disinhib ~ "Disinhibition",
+      frsbe_apathy ~ "Apathy",
+      frsbe_total ~ "Total score",
+      severity ~ "Severity of Injury"
+    )
+  ) %>%
+  add_p(
+    test = list(all_continuous() ~ "t.test", all_categorical() ~ "chisq.test"),
+    pvalue_fun = ~style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n()
+
+print(PPF_table)
+```
+
+Then you can save it to your working drive as a word document. From that word document, you can change the font, layout without having to transpose the data/results.
+
+```{r save tableTotal}
+#to save table to word doc
+library(gt)
+library(gtsummary)
+
+gt_PPF_table <- as_gt(PPF_table)
+   gtsave(gt_PPF_table, filename = "predictive_variables_table.docx")
+```
+
+
+
+# Corrplots
+
+## Gahlot_plot
+
+```{r library, results='hide'}
+library(ggplot2)
+library(reshape2)
+library(Hmisc)
+```
+
+```{r rename variables, results= 'hide'}
+#Rename Variables in new dataset
+df2 <- read_excel('cleaned_data_Final.xlsx') # Again, I save as a different data frame so as not to mess up the original for later analysis
+
+# Rename multiple variables
+df2 <- df2 %>%
+  rename(Global = acsg_retain,
+         IADL = acsi_retain,
+         Leisure = acsl_retain,
+         Fitness = acsf_retain,
+         Social = acss_retain,
+         Extraversion = bfi_extraversion,
+         Agreeable = bfi_agreeable,
+         Consciousness =bfi_consciousness,
+         Neuroticism = bfi_neuroticism,
+         Openness = bfi_openness,
+         Apathy = frsbe_apathy,
+         ExecFunc = frsbe_exec,
+         Disinhibition = frsbe_disinhib,
+         Total = frsbe_total,
+         SocialSupport = spstotal,
+         Communication = tbiqol_comm_tscore,
+         ExecFuncQOL = tbiqol_execfunc_tscore, 
+         GeneralCognition = tbiqol_genconcern_tscore,
+         UpperExtremity = tbiqol_ue_tscore, 
+         Fatigue = tbiqol_fatigue_tscore, 
+         Mobility = tbiqol_mobility_tscore, 
+         Headache = tbiqol_headache_tscore,
+         Pain = tbiqol_pain_tscore,
+         Anger = tbiqol_anger_tscore,
+         PositiveAffect = tbiqol_posaffect_tscore,
+         Age = age_current,
+         Education = edu,
+         Work = work_current,
+         SubstanceUse = substance,
+         Anxiety = tbiqol_anxiety_tscore, 
+         Depression = tbiqol_depression_tscore, 
+         Grief = tbiqol_grief_tscore, 
+         TraitResilience = tbiqol_resilience_tscore,  
+         SelfEsteem = tbiqol_selfesteem_tscore, 
+         Stigma = tbiqol_stigma_tscore,
+         TimeSinceInjury = time_injury,
+         MaritalStatus = marital_status,
+         SocialSupport = spstotal,
+         HouseholdSize = house_size,
+         PhysicalHealth = phys_health_index,
+         EmotionalHealth = emo_health_index)
+         
+```
+
+
+```{r subscaleONLY corr, fig.width=15,fig.height=15}
+QOL_variables <- c("Global", "IADL",  "Leisure", "Fitness", "Social", "Anger", "Anxiety", "Depression", "Grief", "Resilience", "SelfEsteem", "Stigma", "TraitResilience", "PositiveAffect", "Communication", "GeneralCognition", "ExecFuncQOL", "UpperExtremity", "Fatigue", "Mobility", "Headache", "Pain")
+
+# Ensure selected variables are in the dataframe
+QOL_variables <- intersect(QOL_variables, colnames(df2))
+
+# Extract relevant data
+QOL_df2 <- df2[, QOL_variables]
+
+# Calculate correlation matrix
+cor_matrix <- rcorr(as.matrix(QOL_df2), type = "spearman")$r
+cor_matrix[upper.tri(cor_matrix)] <- NA
+p_matrix <- rcorr(as.matrix(QOL_df2), type = "spearman")$P
+p_matrix[is.na(p_matrix)] <- .0000001
+p_matrix[upper.tri(p_matrix)] <- NA
+
+# Melt the correlation matrix for ggplot
+melted_cor <- melt(cor_matrix, na.rm = TRUE)
+melted_p <- melt(p_matrix, na.rm = TRUE)
+
+melted_cor$p <- melted_p$value
+melted_cor$psig <- ""
+melted_cor$psig[melted_cor$p < .05] <- "*"
+melted_cor$psig[melted_cor$p < .01] <- "**"
+melted_cor$psig[melted_cor$p < .001] <- "***"
+
+# Create a heatmap using ggplot2
+p <- ggplot(melted_cor, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(value, 2)), vjust = 1, size = 6, family = "Times New Roman") +  # Adjust size and font
+  geom_text(aes(label = psig), vjust = .25, size = 6, family = "Times New Roman") +  # Adjust size and font
+  scale_fill_gradient2(low = "purple", mid = "white", high = "orange", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20, family = "Times New Roman"),  # Adjust size and font
+        axis.text.y = element_text(size = 20, family = "Times New Roman"),  # Adjust size and font
+        axis.title = element_text(size = 14, family = "Times New Roman"),
+        axis.ticks = element_line(linewidth = 1), 
+        plot.title = element_text(size = 16, family = "Times New Roman"),  # Add title font
+        plot.caption = element_text(size = 14, family = "Times New Roman")) +  # Add caption font
+  labs(caption = "<.05 = *, <.01 = **, <.001 = ***") +
+  xlab("") +
+  ylab("") +
+  ggtitle("Correlation Matrix Personal Protective Factors with ACS Variables")
+
+
+# Save the plot to your working directory
+ggsave("correlation_matrix_plot.png", plot = p, width = 15, height = 15)
+
+#Show plot
+print(p)
+
+```
+### Function for plot
+
+```{r function, results='hide'}
+# Define the function to create and display the correlation heatmap
+create_corr_heatmap <- function(df, variables, plot_title) {
+  
+  # Ensure selected variables are in the dataframe
+  selected_vars <- intersect(variables, colnames(df))
+  
+  # Extract relevant data
+  selected_df <- df[, selected_vars]
+  
+  # Calculate correlation matrix
+  cor_matrix <- rcorr(as.matrix(selected_df), type = "spearman")$r
+  cor_matrix[upper.tri(cor_matrix)] <- NA
+  p_matrix <- rcorr(as.matrix(selected_df), type = "spearman")$P
+  p_matrix[is.na(p_matrix)] <- .0000001
+  p_matrix[upper.tri(p_matrix)] <- NA
+  
+  # Melt the correlation matrix for ggplot
+  melted_cor <- melt(cor_matrix, na.rm = TRUE)
+  melted_p <- melt(p_matrix, na.rm = TRUE)
+  
+  melted_cor$p <- melted_p$value
+  melted_cor$psig <- ""
+  melted_cor$psig[melted_cor$p < .05] <- "*"
+  melted_cor$psig[melted_cor$p < .01] <- "**"
+  melted_cor$psig[melted_cor$p < .001] <- "***"
+  
+  # Create a heatmap using ggplot2
+  p <- ggplot(melted_cor, aes(Var1, Var2, fill = value)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = round(value, 2)), vjust = 1, size = 6, family = "Times New Roman") +  # Adjust size and font
+    geom_text(aes(label = psig), vjust = .25, size = 6, family = "Times New Roman") +  # Adjust size and font
+    scale_fill_gradient2(low = "purple", mid = "white", high = "orange", 
+                         midpoint = 0, limit = c(-1, 1), space = "Lab",
+                         name = "Correlation") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20, family = "Times New Roman"),  # Adjust size and font
+          axis.text.y = element_text(size = 20, family = "Times New Roman"),  # Adjust size and font
+          axis.title = element_text(size = 14, family = "Times New Roman"),
+          axis.ticks = element_line(linewidth = 1),  # Replace 'size' with 'linewidth'
+          plot.title = element_text(size = 16, family = "Times New Roman"),  # Add title font
+          plot.caption = element_text(size = 14, family = "Times New Roman")) +  # Add caption font
+    labs(caption = "<.05 = *, <.01 = **, <.001 = ***") +
+    xlab("") +
+    ylab("") +
+    ggtitle(plot_title)
+  
+  # Display the plot
+  print(p)
+}
+```
+
+Then you can create multiple heatmaps for different variables without retyping everything
+
+```{r function ex, fig.width=15,fig.height=15,}
+create_corr_heatmap(df2, c("Global", "IADL", "Leisure", "Fitness", "Social", "Age", "TimeSinceInjury", "MaritalStatus", "SocialSupport", "HouseholdSize"), "Corr Matrix for Environmental Supports")
+```
+
+# Scatterplots
+
+```{r package hrb, results='hide'}
+# Install hrbrthemes package if you haven't already
+#install.packages("hrbrthemes")
+
+# Load the package
+library(hrbrthemes)
+
+```
+
+
+```{r basic scatter}
+df %>%
+  ggplot( aes(x=frsbe_apathy, y=acss_retain)) +
+    geom_point(color="#69b3a2", alpha=0.6) +
+    ggtitle("Relationship between Apathy and Social Re-engagement after TBI") +
+    theme_ipsum() +
+    theme(
+      plot.title = element_text(size=12)
+    ) +
+    ylab('Social Re-engagement') +
+    xlab('Apathy Score')
+```
+Scatterplots are sometimes supported by marginal distributions. It indeed adds insight to the graphic, revealing the distribution of both variables:
+
+```{r scatter with bar}
+library(ggExtra)
+
+# create a ggplot2 scatterplot
+p <- df %>%
+  ggplot( aes(x=tbiqol_grief_tscore, y=tbiqol_depression_tscore)) +
+    geom_point(color="#69b3a2", alpha=0.8) +
+    theme_ipsum() +
+    theme(
+      legend.position="none"
+    )
+
+# add marginal histograms
+ggExtra::ggMarginal(p, type = "histogram", color="grey")
+```
+
+But what if I wanted each subscale of the FrSBe on there...
+
+```{r scatter total}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Convert to long format
+df_long <- df %>%
+  pivot_longer(cols = c(frsbe_apathy, frsbe_exec, frsbe_disinhib),
+               names_to = "frsbe_type", values_to = "frsbe_value")
+
+# Plot the data
+ggplot(df_long, aes(x = frsbe_value, y = acss_retain, color = frsbe_type)) +
+  geom_point(alpha = 0.6) +
+  scale_color_manual(values = c("frsbe_apathy" = "#69b3a2", 
+                                "frsbe_exec" = "#404080", 
+                                "frsbe_disinhib" = "#e38900")) +
+  ggtitle("Relationship between Apathy, Executive Function, and Disinhibition with Social Re-engagement") +
+  ylab("Social Re-engagement") +
+  xlab("Frontal Systems Behavior Subscales") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12),
+    legend.title = element_blank()
+  )
+
+```
+
+What if I wanted to just look at Apathy again but split based on severity of injury?
+
+```{r scatter by severity}
+library(ggplot2)
+library(hrbrthemes)
+
+# Plot the relationship between apathy and social re-engagement
+df %>%
+  ggplot(aes(x = frsbe_apathy, y = acss_retain, color = severity)) +  # Map color to severity
+  geom_point(alpha = 0.6) +  # Use alpha for point transparency
+  ggtitle("Relationship between Apathy and Social Re-engagement after TBI") +
+  theme_ipsum() +  # Ensure this is loaded from hrbrthemes
+  theme(
+    plot.title = element_text(size = 12)
+  ) +
+  ylab('Social Re-engagement') +
+  xlab('Apathy Score') +
+  scale_color_gradient(low = "#69b3a2", high = "#e38900")  # Customize the color gradient for severity
+
+```
+
+## Interactive
+
+Interactivity allows us to zoom on a specific part of the graphic to detect more precise pattern. It also allows us to hover dots to get more information about them, like below:
+
+```{r interactive scatterplot,  }
+library(ggplot2)
+library(hrbrthemes)
+library(plotly)
+
+# Create the interactive scatter plot
+interactive_scatter <- df_demo %>%
+  mutate(text = paste("Apathy Score: ", frsbe_apathy, "\nSocial Re-engagement: ", acss_retain)) %>% #This is what will show when you hover over a plot
+  ggplot(aes(x = frsbe_apathy, y = acss_retain, text = text)) +
+  geom_point(aes(color = severity), alpha = 0.6) +  # Color points based on severity
+  ggtitle("Relationship between Apathy and Social Re-engagement after TBI") +
+  theme_ipsum() +  
+  theme(
+    plot.title = element_text(size = 12)
+  ) +
+  ylab('Social Re-engagement') +
+  xlab('Apathy Score')
+
+# Make the plot interactive with plotly
+ggplotly(interactive_scatter, tooltip = "text")
+
+```
+
+### Saving html widget
+
+```{r}
+#packages
+#install.packages("htmlwidgets")
+library(htmlwidgets)
+# save as an html widget
+#saveWidget(interactive_scatter, "Interactive_ScatterPlot.html", selfcontained = TRUE)
+```
+OR
+
+```{r}
+library(htmltools)
+# save_html(interactive_scatter, file = "interactive_scatter.html")
+```
+
+```{r}
+# widget_plot <- as_widget(interactive_scatter)
+
+# Now save it as an HTML file
+# saveWidget(widget_plot, "Interactive_ScatterPlot.html", selfcontained = TRUE)
+```
+
+
+# Bubble plot
+
+A bubble plot is a scatterplot where a third dimension is added: the value of an additional numeric variable is represented through the size of the dots.You need 3 numerical variables as input: one is represented by the X axis, one by the Y axis, and one by the dot size.
+
+In this example, I'm going to look at the relationship between grief and depression with the dot size related the person's current engagement in activities
+
+```{r more libraries, results='hide'}
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+library(gridExtra)
+library(ggrepel)
+library(plotly)
+```
+
+```{r bubble, fig.width=15,fig.height=15}
+
+df$age_current<- as.factor(df$age_current)
+df %>%
+  arrange(desc(acsg_curr)) %>%
+  ggplot(aes(x = tbiqol_depression_tscore, 
+             y = tbiqol_grief_tscore, 
+             size = acsg_curr, 
+             color = age_current)) +  # You can replace 'severity' with another variable if needed
+  geom_point(alpha = 0.7) +
+  scale_size(range = c(1.4, 19), name = "Current Engagement Score") +  # Adjust size range as needed
+  scale_color_viridis(discrete = TRUE) +  # Change to your desired color scale
+  theme_ipsum() +
+  theme(legend.position = "bottom") +
+  ggtitle("Bubble Plot of Depression vs. Grief T-scores") +
+  xlab("Depression T-Score") +
+  ylab("Grief T-Score")
+```
+
+
+## Interactive
+
+```{r bubble interactive, fig.width=9,fig.height=12}
+library(ggplot2)
+library(hrbrthemes)
+library(viridis)
+library(plotly)
+
+# Ensure severity is a factor
+df$severity <- as.factor(df$severity)
+
+# Create the bubble plot
+p <- df %>%
+  ggplot(aes(x = tbiqol_depression_tscore, 
+             y = tbiqol_grief_tscore, 
+             size = acsg_curr, 
+             color = age_current, 
+             text = paste("Age:", age_current, 
+                          "<br>Depression T-Score:", tbiqol_depression_tscore, 
+                          "<br>Grief T-Score:", tbiqol_grief_tscore,
+                          "<br>Current Engagement Score:", acsg_curr))) + 
+  geom_point(alpha = 0.7) +
+  scale_size(range = c(1.4, 19), name = "Current Engagement Score") + 
+  scale_color_viridis(discrete = TRUE) + 
+  theme_ipsum() +
+  theme(legend.position = "bottom") +
+  ggtitle("Bubble Plot of Depression vs. Grief T-scores") +
+  xlab("Depression T-Score") +
+  ylab("Grief T-Score")
+
+# Convert to interactive plot
+ggplotly(p, tooltip = "text")
+
+```
+
+
+# Interactive Heatmaps
+
+```{r, results='hide'}
+# Libraries
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+library(plotly)
+# d3heatmap is not on CRAN yet, but can be found here: https://github.com/talgalili/d3heatmap
+#To load this follow these steps
+# install.packages("devtools")
+library(devtools)
+# install_github("talgalili/d3heatmap")
+library(d3heatmap)
+```
+
+```{r interactive heatmap, fig.width=15,fig.height=15}
+
+# Details and variations can be found here: https://www.data-to-viz.com/graph/heatmap.html
+
+# Load data
+data <- read.table("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/multivariate.csv", header = T, sep = ";")
+colnames(data) <- gsub("\\.", " ", colnames(data))
+
+# Select a few country
+data <- data %>%
+  filter(Country %in% c("France", "Sweden", "Italy", "Spain", "England", "Portugal", "Greece", "Peru", "Chile", "Brazil", "Argentina", "Bolivia", "Venezuela", "Australia", "New Zealand", "Fiji", "China", "India", "Thailand", "Afghanistan", "Bangladesh", "United States of America", "Canada", "Burundi", "Angola", "Kenya", "Togo")) %>%
+  arrange(Country) %>%
+  mutate(Country = factor(Country, Country))
+
+# Matrix format
+mat <- data
+rownames(mat) <- mat[,1]
+mat <- mat %>% dplyr::select(-Country, -Group, -Continent)
+mat <- as.matrix(mat)
+
+# Heatmap
+d3heatmap(mat, scale="column", dendrogram = "none", width="800px", height="800px", colors = "Blues")
+
+library(heatmaply)
+p <- heatmaply(mat,
+        dendrogram = "none",
+        xlab = "", ylab = "",
+        main = "",
+        scale = "column",
+        margins = c(60,100,40,20),
+        grid_color = "white",
+        grid_width = 0.00001,
+        titleX = FALSE,
+        hide_colorbar = TRUE,
+        branches_lwd = 0.1,
+        label_names = c("Country", "Feature:", "Value"),
+        fontsize_row = 5, fontsize_col = 5,
+        labCol = colnames(mat),
+        labRow = rownames(mat),
+        heatmap_layers = theme(axis.line = element_blank())
+        )
+```
+
+
+# Stacked area: interactive
+
+I don't work much in time series, so here's a sample of what it could look like and the code
+
+```{r}
+# Libraries
+library(ggplot2)
+library(dplyr)
+library(babynames) #just for the data for analysis, not needed for the code
+library(viridis)
+library(hrbrthemes)
+library(plotly)
+
+# Load dataset from github
+data <- babynames %>% 
+  filter(name %in% c("Ashley", "Amanda", "Jessica",    "Patricia", "Linda", "Deborah",   "Dorothy", "Betty", "Helen")) %>%
+  filter(sex=="F")
+
+# Plot
+p <- data %>% 
+  ggplot( aes(x=year, y=n, fill=name, text=name)) +
+    geom_area( ) +
+    scale_fill_viridis(discrete = TRUE) +
+    theme(legend.position="none") +
+    ggtitle("Popularity of American names in the previous 30 years") +
+    theme_ipsum() +
+    theme(legend.position="none")
+
+# Turn it interactive
+p <- ggplotly(p, tooltip="text")
+p
+
+# save the widget
+# library(htmlwidgets)
+# saveWidget(p, file=paste0( getwd(), "/HtmlWidget/ggplotlyStackedareachart.html"))
+```
+
+Some general thoughts:
+
+- R is finicky when it comes to packages. Often packages that are loaded early are masked by packages loaded late. If you had a code that *was* working, but now is not-- check your packages. For me, d3heatmap package maskedmy print() function and I had to "turn off" d3heatmap to get my code to work.
+
+- There are a lot of time series visuals that I didn't review as I have worked more in cross sectional data.. explore data-to-viz.com to check them out.
+
+- Python. Seaborn library (for me) is far superior with creating side by side visuals for looking at relationships. Check it out... Start a new Google Colab and enter the code below:
+
+import seaborn as sns
+df = sns.load_dataset('iris')
+import matplotlib.pyplot as plt
+ 
+Basic correlogram
+>sns_plot = sns.pairplot(df)
+sns_plot.savefig("IMG/correlogram1.png")
+
+Or make it a regression
+>sns_plot = sns.pairplot(df, kind="reg")
+sns_plot.savefig("IMG/correlogram2.png")
+
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
